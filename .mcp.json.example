@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "droip-bridge": {
+      "command": "/Users/gustavogomez/Library/Application Support/Local/lightning-services/php-8.4.10+0/bin/darwin-arm64/bin/php",
+      "args": [
+        "-d", "mysqli.default_socket=/Users/gustavogomez/Library/Application Support/Local/run/l41e64xx4/mysql/mysqld.sock",
+        "/Users/gustavogomez/Local Sites/droip-test/app/public/wp-content/plugins/droip-claude-bridge/mcp-server/server.php"
+      ],
+      "env": {
+        "WP_ROOT_PATH": "/Users/gustavogomez/Local Sites/droip-test/app/public"
+      }
+    }
+  }
+}
