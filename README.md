@@ -5,7 +5,7 @@ A WordPress plugin that connects [Claude Code](https://claude.ai/claude-code) to
 ## Requirements
 
 - WordPress 6.0+
-- [Droip](https://droip.com) plugin (v3.0.0+) installed and active
+- [Droip](https://droip.com) plugin (v2.5.7+) installed and active
 - PHP 8.1+
 - [Composer](https://getcomposer.org)
 - [Claude Code](https://claude.ai/claude-code) CLI
