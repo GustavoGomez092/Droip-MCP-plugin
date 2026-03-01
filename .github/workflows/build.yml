@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   test:
     name: Run Tests
@@ -23,8 +26,8 @@ jobs:
       - name: Run tests
         run: vendor/bin/phpunit
 
-  build:
-    name: Build & Upload Artifact
+  release:
+    name: Build & Release
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -45,8 +48,23 @@ jobs:
       - name: Build plugin zip
         run: bash build.sh
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: droip-claude-bridge-${{ steps.version.outputs.version }}
-          path: droip-claude-bridge-${{ steps.version.outputs.version }}.zip
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          ZIP="droip-claude-bridge-${VERSION}.zip"
+          SHORT_SHA=$(git rev-parse --short HEAD)
+
+          # Delete existing release/tag for this version (allows overwrite on same version)
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          git push origin --delete "$TAG" 2>/dev/null || true
+
+          gh release create "$TAG" "$ZIP" \
+            --title "Droip Claude Bridge $TAG" \
+            --notes "**Droip Claude Bridge $TAG** (${SHORT_SHA})
+
+          Install: Download the zip below and upload it via **Plugins > Add New > Upload Plugin** in WordPress.
+
+          Requires the [Droip](https://droip.com) plugin to be active."
