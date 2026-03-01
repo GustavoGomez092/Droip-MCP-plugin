@@ -132,10 +132,15 @@ class BuilderToolsTest extends TestCase
         \WPMocks::$posts[10] = \WPMocks::createPost(10, 'page');
         \WPMocks::$posts[42] = \WPMocks::createPost(42, DROIP_SYMBOL_TYPE);
         \WPMocks::$postMeta[10][DROIP_APP_PREFIX] = [
-            'dproot' => [
-                'id' => 'dproot', 'name' => 'div', 'parentId' => null,
-                'children' => [],
+            'blocks' => [
+                'root' => ['id' => 'root', 'name' => 'root', 'children' => ['body']],
+                'body' => ['id' => 'body', 'name' => 'body', 'parentId' => 'root', 'children' => ['dproot']],
+                'dproot' => [
+                    'id' => 'dproot', 'name' => 'div', 'parentId' => 'body',
+                    'children' => [],
+                ],
             ],
+            'rootId' => 'root',
         ];
 
         $result = BuilderTools::handleAddSymbolToPage([
@@ -148,8 +153,9 @@ class BuilderToolsTest extends TestCase
         $this->assertTrue($data['success']);
         $this->assertNotEmpty($data['element_id']);
 
-        // Verify the page data was updated
-        $updatedBlocks = \WPMocks::$postMeta[10][DROIP_APP_PREFIX];
+        // Verify the page data was updated (stored in blocks wrapper)
+        $updatedMeta = \WPMocks::$postMeta[10][DROIP_APP_PREFIX];
+        $updatedBlocks = $updatedMeta['blocks'];
         $this->assertArrayHasKey($data['element_id'], $updatedBlocks);
         $this->assertContains($data['element_id'], $updatedBlocks['dproot']['children']);
     }
@@ -159,10 +165,15 @@ class BuilderToolsTest extends TestCase
         \WPMocks::$posts[10] = \WPMocks::createPost(10, 'page');
         \WPMocks::$posts[42] = \WPMocks::createPost(42, DROIP_SYMBOL_TYPE);
         \WPMocks::$postMeta[10][DROIP_APP_PREFIX] = [
-            'dproot' => [
-                'id' => 'dproot', 'name' => 'div', 'parentId' => null,
-                'children' => ['dpexisting1', 'dpexisting2'],
+            'blocks' => [
+                'root' => ['id' => 'root', 'name' => 'root', 'children' => ['body']],
+                'body' => ['id' => 'body', 'name' => 'body', 'parentId' => 'root', 'children' => ['dproot']],
+                'dproot' => [
+                    'id' => 'dproot', 'name' => 'div', 'parentId' => 'body',
+                    'children' => ['dpexisting1', 'dpexisting2'],
+                ],
             ],
+            'rootId' => 'root',
         ];
 
         $result = BuilderTools::handleAddSymbolToPage([
@@ -172,7 +183,7 @@ class BuilderToolsTest extends TestCase
             'position'          => 1,
         ]);
 
-        $updatedBlocks = \WPMocks::$postMeta[10][DROIP_APP_PREFIX];
+        $updatedBlocks = \WPMocks::$postMeta[10][DROIP_APP_PREFIX]['blocks'];
         $children = $updatedBlocks['dproot']['children'];
         $this->assertSame('dpexisting1', $children[0]);
         // New element at position 1
@@ -226,17 +237,37 @@ class BuilderToolsTest extends TestCase
         $this->assertTrue($result->isError);
     }
 
-    public function testAddSymbolToPageNoDroipData(): void
+    public function testAddSymbolToPageNoDroipDataCreatesScaffold(): void
     {
         \WPMocks::$posts[10] = \WPMocks::createPost(10, 'page');
         \WPMocks::$posts[42] = \WPMocks::createPost(42, DROIP_SYMBOL_TYPE);
-        // No droip meta for page
+        // No droip meta for page — scaffold is auto-created
+
+        $result = BuilderTools::handleAddSymbolToPage([
+            'page_id' => 10, 'symbol_id' => 42, 'parent_element_id' => 'body',
+        ]);
+
+        $data = json_decode($result->content[0]->text, true);
+        $this->assertTrue($data['success']);
+
+        // Verify scaffold was created with root and body
+        $updatedBlocks = \WPMocks::$postMeta[10][DROIP_APP_PREFIX]['blocks'];
+        $this->assertArrayHasKey('root', $updatedBlocks);
+        $this->assertArrayHasKey('body', $updatedBlocks);
+        $this->assertContains($data['element_id'], $updatedBlocks['body']['children']);
+    }
+
+    public function testAddSymbolToPageNoDroipDataInvalidParent(): void
+    {
+        \WPMocks::$posts[10] = \WPMocks::createPost(10, 'page');
+        \WPMocks::$posts[42] = \WPMocks::createPost(42, DROIP_SYMBOL_TYPE);
+        // No droip meta — scaffold only has root + body
 
         $result = BuilderTools::handleAddSymbolToPage([
             'page_id' => 10, 'symbol_id' => 42, 'parent_element_id' => 'dproot',
         ]);
         $this->assertTrue($result->isError);
-        $this->assertStringContainsString('no Droip data', $result->content[0]->text);
+        $this->assertStringContainsString('not found in page data', $result->content[0]->text);
     }
 
     public function testAddSymbolToPageParentNotFound(): void
@@ -244,7 +275,12 @@ class BuilderToolsTest extends TestCase
         \WPMocks::$posts[10] = \WPMocks::createPost(10, 'page');
         \WPMocks::$posts[42] = \WPMocks::createPost(42, DROIP_SYMBOL_TYPE);
         \WPMocks::$postMeta[10][DROIP_APP_PREFIX] = [
-            'dproot' => ['id' => 'dproot', 'children' => []],
+            'blocks' => [
+                'root' => ['id' => 'root', 'name' => 'root', 'children' => ['body']],
+                'body' => ['id' => 'body', 'name' => 'body', 'parentId' => 'root', 'children' => ['dproot']],
+                'dproot' => ['id' => 'dproot', 'name' => 'div', 'parentId' => 'body', 'children' => []],
+            ],
+            'rootId' => 'root',
         ];
 
         $result = BuilderTools::handleAddSymbolToPage([
@@ -259,7 +295,12 @@ class BuilderToolsTest extends TestCase
         \WPMocks::$posts[10] = \WPMocks::createPost(10, 'page');
         \WPMocks::$posts[42] = \WPMocks::createPost(42, DROIP_SYMBOL_TYPE);
         \WPMocks::$postMeta[10][DROIP_APP_PREFIX] = [
-            'dproot' => ['id' => 'dproot', 'children' => []],
+            'blocks' => [
+                'root' => ['id' => 'root', 'name' => 'root', 'children' => ['body']],
+                'body' => ['id' => 'body', 'name' => 'body', 'parentId' => 'root', 'children' => ['dproot']],
+                'dproot' => ['id' => 'dproot', 'name' => 'div', 'parentId' => 'body', 'children' => []],
+            ],
+            'rootId' => 'root',
         ];
 
         $result = BuilderTools::handleAddSymbolToPage([
@@ -268,7 +309,7 @@ class BuilderToolsTest extends TestCase
 
         $data = json_decode($result->content[0]->text, true);
         $elementId = $data['element_id'];
-        $updatedBlocks = \WPMocks::$postMeta[10][DROIP_APP_PREFIX];
+        $updatedBlocks = \WPMocks::$postMeta[10][DROIP_APP_PREFIX]['blocks'];
         $instanceEl = $updatedBlocks[$elementId];
 
         $this->assertSame('symbol', $instanceEl['name']);
