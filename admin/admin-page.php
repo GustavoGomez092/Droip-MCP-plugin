@@ -132,3 +132,110 @@ function droip_bridge_generate_mcp_config(): array {
 	);
 }
 
+// ─── Admin Bar Status Light ─────────────────────────────────────────────────
+
+/**
+ * Run prerequisite checks for the MCP server.
+ *
+ * @return array{ok: bool, disabled: bool, checks: array<string, bool>}
+ */
+function droip_bridge_check_server_status(): array {
+	$settings = get_option( DROIP_BRIDGE_OPTION_KEY, array( 'enabled' => false ) );
+	$enabled  = ! empty( $settings['enabled'] );
+
+	$php_binary   = droip_bridge_detect_php_binary();
+	$mysql_socket = droip_bridge_detect_mysql_socket();
+
+	$checks = array(
+		'Server Enabled'         => $enabled,
+		'PHP Binary Found'       => $php_binary !== '/path/to/php' && is_executable( $php_binary ),
+		'MySQL Socket'           => $mysql_socket !== '' && file_exists( $mysql_socket ),
+		'Dependencies Installed' => file_exists( DROIP_BRIDGE_PATH . 'vendor/autoload.php' ),
+		'Server File Exists'     => file_exists( DROIP_BRIDGE_PATH . 'mcp-server/server.php' ),
+	);
+
+	$all_pass = ! in_array( false, $checks, true );
+
+	return array(
+		'ok'       => $all_pass,
+		'disabled' => ! $enabled,
+		'checks'   => $checks,
+	);
+}
+
+/**
+ * Add MCP server status node to the admin bar.
+ */
+add_action( 'admin_bar_menu', function ( \WP_Admin_Bar $wp_admin_bar ) {
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		return;
+	}
+
+	$status    = droip_bridge_check_server_status();
+	$configure = admin_url( 'admin.php?page=droip&tab=integrations' );
+
+	// Determine dot color.
+	if ( $status['disabled'] ) {
+		$color = '#9ca3af'; // gray
+		$label = 'MCP Disabled';
+	} elseif ( $status['ok'] ) {
+		$color = '#22c55e'; // green
+		$label = 'MCP Server';
+	} else {
+		$color = '#ef4444'; // red
+		$label = 'MCP Server';
+	}
+
+	$dot = sprintf(
+		'<span style="display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;margin-right:6px;vertical-align:middle;"></span>',
+		$color
+	);
+
+	$wp_admin_bar->add_node( array(
+		'id'    => 'droip-mcp-status',
+		'title' => $dot . $label,
+		'href'  => $configure,
+		'meta'  => array(
+			'title' => $status['ok'] ? 'MCP server ready' : ( $status['disabled'] ? 'MCP server disabled' : 'MCP server has issues' ),
+		),
+	) );
+
+	// Individual check items.
+	foreach ( $status['checks'] as $name => $pass ) {
+		$icon = $pass ? '&#x2713;' : '&#x2717;';
+		$wp_admin_bar->add_node( array(
+			'id'     => 'droip-mcp-' . sanitize_title( $name ),
+			'parent' => 'droip-mcp-status',
+			'title'  => sprintf(
+				'<span style="color:%s;margin-right:4px;">%s</span> %s',
+				$pass ? '#22c55e' : '#ef4444',
+				$icon,
+				esc_html( $name )
+			),
+		) );
+	}
+
+	// Configure link.
+	$wp_admin_bar->add_node( array(
+		'id'     => 'droip-mcp-configure',
+		'parent' => 'droip-mcp-status',
+		'title'  => 'Configure&hellip;',
+		'href'   => $configure,
+	) );
+}, 100 );
+
+/**
+ * Minimal styles for the admin bar status dot.
+ */
+add_action( 'admin_head', function () {
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		return;
+	}
+	?>
+	<style>
+		#wp-admin-bar-droip-mcp-status .ab-item { display: flex; align-items: center; }
+		#wp-admin-bar-droip-mcp-status .ab-submenu .ab-item { display: flex; align-items: center; }
+	</style>
+	<?php
+} );
+

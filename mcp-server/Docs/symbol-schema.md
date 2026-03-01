@@ -145,3 +145,82 @@ Each variant value is a **CSS declaration string** (no selectors, just propertie
 5. All `styleIds` should reference existing entries in `styleBlocks`
 6. Each element's `id` field must match its key in the data map
 7. `name` and `root` are required
+
+## Page Data Structure (vs Symbols)
+
+Page data is stored differently from symbol data. A page's `droip` post meta uses this wrapper:
+
+```
+{
+  "blocks": { [elementId]: ElementNode, ... },
+  "rootId": "root"
+}
+```
+
+### CRITICAL: `root` and `body` Virtual Elements
+
+The Droip editor's Redux store expects **every page** to have two virtual wrapper elements at the top of the element hierarchy:
+
+```
+root (name="root", id="root")
+  └── body (name="body", id="body", parentId="root")
+        └── your content elements...
+```
+
+**If `root` or `body` are missing, the editor crashes** with:
+```
+TypeError: Cannot read properties of undefined (reading 'children')
+    at loadBlockStyleData
+```
+
+This happens because the editor accesses `data.root.children[0]` on load. Without the `root` element in the blocks map, this is `undefined.children` → crash.
+
+### Required Virtual Elements
+
+```json
+{
+  "blocks": {
+    "root": {
+      "id": "root",
+      "name": "root",
+      "children": ["body"],
+      "accept": "*",
+      "title": "Body",
+      "styleIds": [],
+      "stylePanels": { "typography": true, "composition": true, "size": true, "background": true, "stroke": true, "shadow": true, "effects": true, "position": true, "transform": true, "interaction": true, "animation": true }
+    },
+    "body": {
+      "id": "body",
+      "name": "body",
+      "parentId": "root",
+      "children": ["<your-content-root-id>"],
+      "title": "Body",
+      "visibility": true,
+      "collapse": false,
+      "properties": { "tag": "div" },
+      "styleIds": [],
+      "className": "droip-body",
+      "stylePanels": { "typography": true, "composition": true, "size": true, "background": true, "stroke": true, "shadow": true, "effects": true, "position": true, "transform": true, "interaction": true, "animation": true }
+    }
+  }
+}
+```
+
+### Key Differences: Page vs Symbol
+
+| Aspect | Symbol | Page |
+|--------|--------|------|
+| Post meta key | `droip` | `droip` |
+| Wrapper | `{ name, root, data, styleBlocks }` | `{ blocks, rootId }` |
+| Element map key | `data` | `blocks` |
+| Root element | Any `dp*` element with `parentId: null` | Must be virtual `root` → `body` hierarchy |
+| Style storage | `styleBlocks` inside symbol data | Separate `droip_global_style_block_random` post meta |
+
+### The `droip_add_symbol_to_page` Tool
+
+This tool automatically handles the root/body scaffold:
+- Creates `root` + `body` if the page has no existing Droip data
+- Injects missing `root`/`body` if page data exists but lacks them
+- Re-parents orphaned top-level elements under `body`
+
+You do **not** need to manually create root/body when using this tool.

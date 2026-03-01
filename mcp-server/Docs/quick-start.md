@@ -95,6 +95,28 @@ and saves it to the database. The symbol will immediately appear in Droip's edit
 - Every child ID in a `children` array must exist in the `data` map
 - Set `"setAs": "header"` or `"setAs": "footer"` for site-wide header/footer symbols
 
+## Assembling Symbols into a Page
+
+After creating symbols, use `droip_add_symbol_to_page` to place them on a page.
+
+### Workflow
+
+1. Create all your symbols with `droip_create_symbol`
+2. Create or identify the target WordPress page (post ID)
+3. Call `droip_add_symbol_to_page` for each symbol, in order:
+   - First call: use `parent_element_id: "body"` — the tool auto-creates the page scaffold
+   - Subsequent calls: continue using `"body"` as parent to append symbols sequentially
+
+### What the tool handles automatically
+
+- Creates the required `root` → `body` virtual elements if the page has no Droip data
+- Fixes pages missing the `root`/`body` scaffold (prevents editor crash)
+- Creates a symbol reference element (`name: "symbol"`) pointing to your symbol's post ID
+
+### Important: Page data structure
+
+Page data differs from symbol data. See `droip_get_symbol_guide` → "Page Data Structure" section for details. The critical rule: every page must have virtual `root` and `body` elements, or the Droip editor will crash with `Cannot read properties of undefined (reading 'children')`.
+
 ## Dynamic Content
 
 Symbols can display WordPress data dynamically using the `dynamicContent` property on headings, paragraphs, images, and link-blocks. This is how you build blog post cards, author bios, and other data-driven components. See `droip_get_element_schema` for full details on available dynamic content fields.

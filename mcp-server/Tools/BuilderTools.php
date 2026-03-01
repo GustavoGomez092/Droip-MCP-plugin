@@ -144,44 +144,190 @@ class BuilderTools
             );
         }
 
-        // Get page data
-        $blocks = get_post_meta($pageId, DROIP_APP_PREFIX, true);
-        if (empty($blocks)) {
+        // Get page data — Droip stores it as { blocks: {...}, rootId: '...' }
+        $pageMeta = get_post_meta($pageId, DROIP_APP_PREFIX, true);
+
+        // Extract the blocks map from the wrapper structure
+        if (!empty($pageMeta) && isset($pageMeta['blocks'])) {
+            $blocks = &$pageMeta['blocks'];
+        } elseif (!empty($pageMeta)) {
+            // Legacy or flat structure — treat entire meta as blocks
+            $pageMeta = ['blocks' => $pageMeta, 'rootId' => 'root'];
+            $blocks = &$pageMeta['blocks'];
+        } else {
+            // No existing data — initialize with root + body scaffold
+            $pageMeta = self::createEmptyPageData();
+            $blocks = &$pageMeta['blocks'];
+        }
+
+        // Ensure root and body virtual elements exist (Droip editor requires them)
+        self::ensureRootBodyElements($blocks, $pageMeta);
+
+        // Verify parent element exists
+        if (!isset($blocks[$parentElementId])) {
+            $availableIds = array_keys($blocks);
             return new CallToolResult(
-                [new TextContent(text: "Error: Page {$pageId} has no Droip data")],
+                [new TextContent(text: "Error: Parent element '{$parentElementId}' not found in page data. Available element IDs: " . implode(', ', $availableIds))],
                 isError: true
             );
         }
 
-        // Verify parent element exists
-        if (!isset($blocks[$parentElementId])) {
-            return new CallToolResult(
-                [new TextContent(text: "Error: Parent element '{$parentElementId}' not found in page data")],
-                isError: true
-            );
-        }
+        // Get symbol name for the title
+        $symbolData = get_post_meta($symbolId, DROIP_APP_PREFIX, true);
+        $symbolName = $symbolData['name'] ?? 'Symbol';
 
         // Create symbol instance element
         $instanceId = IdGenerator::elementId();
         $instanceElement = ElementFactory::symbolInstance($instanceId, $parentElementId, $symbolId);
+        $instanceElement['title'] = $symbolName;
         $blocks[$instanceId] = $instanceElement;
 
         // Add to parent's children
+        if (!isset($blocks[$parentElementId]['children'])) {
+            $blocks[$parentElementId]['children'] = [];
+        }
         if ($position !== null && $position >= 0) {
             array_splice($blocks[$parentElementId]['children'], $position, 0, [$instanceId]);
         } else {
             $blocks[$parentElementId]['children'][] = $instanceId;
         }
 
-        // Save updated page data
-        update_post_meta($pageId, DROIP_APP_PREFIX, $blocks);
+        // Save updated page data (preserving the wrapper structure)
+        update_post_meta($pageId, DROIP_APP_PREFIX, $pageMeta);
 
         return new CallToolResult([new TextContent(
             text: json_encode([
                 'success'    => true,
                 'element_id' => $instanceId,
-                'message'    => "Symbol {$symbolId} added to page {$pageId} as element '{$instanceId}'.",
+                'message'    => "Symbol {$symbolId} ({$symbolName}) added to page {$pageId} as element '{$instanceId}' under parent '{$parentElementId}'.",
             ], JSON_PRETTY_PRINT)
         )]);
+    }
+
+    /**
+     * Create empty page data with root and body virtual elements.
+     *
+     * Droip's editor Redux store expects every page to have a virtual `root`
+     * element (name="root") with a `body` child (name="body"). Without these,
+     * the editor crashes at `loadBlockStyleData` trying to access
+     * `data.root.children[0]`.
+     *
+     * @return array Page meta structure with blocks and rootId
+     */
+    private static function createEmptyPageData(): array
+    {
+        $stylePanels = [
+            'typography' => true, 'composition' => true, 'size' => true,
+            'background' => true, 'stroke' => true, 'shadow' => true,
+            'effects' => true, 'position' => true, 'transform' => true,
+            'interaction' => true, 'animation' => true,
+        ];
+
+        return [
+            'blocks' => [
+                'root' => [
+                    'children'    => ['body'],
+                    'id'          => 'root',
+                    'name'        => 'root',
+                    'accept'      => '*',
+                    'title'       => 'Body',
+                    'styleIds'    => [],
+                    'stylePanels' => $stylePanels,
+                ],
+                'body' => [
+                    'visibility'  => true,
+                    'collapse'    => false,
+                    'name'        => 'body',
+                    'title'       => 'Body',
+                    'properties'  => ['tag' => 'div'],
+                    'styleIds'    => [],
+                    'className'   => 'droip-body',
+                    'children'    => [],
+                    'id'          => 'body',
+                    'parentId'    => 'root',
+                    'stylePanels' => $stylePanels,
+                ],
+            ],
+            'rootId' => 'root',
+        ];
+    }
+
+    /**
+     * Ensure root and body virtual elements exist in the blocks map.
+     *
+     * If the blocks map is missing `root` or `body`, this method adds them and
+     * re-parents the current top-level element under body.
+     *
+     * @param array &$blocks  Reference to the blocks map
+     * @param array &$pageMeta Reference to the full page meta (to update rootId)
+     */
+    private static function ensureRootBodyElements(array &$blocks, array &$pageMeta): void
+    {
+        if (isset($blocks['root']) && isset($blocks['body'])) {
+            return; // Already has the required structure
+        }
+
+        $stylePanels = [
+            'typography' => true, 'composition' => true, 'size' => true,
+            'background' => true, 'stroke' => true, 'shadow' => true,
+            'effects' => true, 'position' => true, 'transform' => true,
+            'interaction' => true, 'animation' => true,
+        ];
+
+        // Find the current top-level element (parentId = null or missing)
+        $topLevelId = null;
+        foreach ($blocks as $eid => $el) {
+            if (!isset($el['parentId']) || $el['parentId'] === null) {
+                $topLevelId = $eid;
+                break;
+            }
+        }
+
+        // Build body children — either wrap the existing top-level element or start empty
+        $bodyChildren = $topLevelId ? [$topLevelId] : [];
+
+        if (!isset($blocks['root'])) {
+            $blocks = ['root' => [
+                'children'    => ['body'],
+                'id'          => 'root',
+                'name'        => 'root',
+                'accept'      => '*',
+                'title'       => 'Body',
+                'styleIds'    => [],
+                'stylePanels' => $stylePanels,
+            ]] + $blocks;
+        }
+
+        if (!isset($blocks['body'])) {
+            // Insert body right after root
+            $newBlocks = [];
+            foreach ($blocks as $k => $v) {
+                $newBlocks[$k] = $v;
+                if ($k === 'root') {
+                    $newBlocks['body'] = [
+                        'visibility'  => true,
+                        'collapse'    => false,
+                        'name'        => 'body',
+                        'title'       => 'Body',
+                        'properties'  => ['tag' => 'div'],
+                        'styleIds'    => [],
+                        'className'   => 'droip-body',
+                        'children'    => $bodyChildren,
+                        'id'          => 'body',
+                        'parentId'    => 'root',
+                        'stylePanels' => $stylePanels,
+                    ];
+                }
+            }
+            $blocks = $newBlocks;
+        }
+
+        // Re-parent the top-level element under body
+        if ($topLevelId && isset($blocks[$topLevelId])) {
+            $blocks[$topLevelId]['parentId'] = 'body';
+        }
+
+        // Update rootId
+        $pageMeta['rootId'] = 'root';
     }
 }
